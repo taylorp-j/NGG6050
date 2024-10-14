@@ -1,0 +1,87 @@
+(1) Get the Data
+
+data = later_getData([], [], 0.2);
+RTs = data{1};
+clear data;
+
+% Remove outliers using IQR
+Q1 = prctile(RTs, 25);   % First quartile
+Q3 = prctile(RTs, 75);   % Third quartile
+IQR = Q3 - Q1;           % Interquartile range
+
+% Define thresholds for outliers
+lower_bound = Q1 - 1.5 * IQR;
+upper_bound = Q3 + 1.5 * IQR;
+
+% Filter out outliers
+RTs_cleaned = RTs(RTs >= lower_bound & RTs <= upper_bound);
+
+% Remove express saccades (example threshold)
+express_saccade_threshold = 100;  % Example threshold in ms
+RTs_final = RTs_cleaned(RTs_cleaned >= express_saccade_threshold);
+
+
+(2) Define the objective function 
+% Parameters for the Gaussian model
+mu = 300;    % Mean RT (in ms)
+sigma = 50;  % Standard deviation of RT (in ms)
+
+%Compute the likelihood for each RT
+likelihoods = (1 / (sigma * sqrt(2 * pi))) * exp(-0.5 * ((RTs_final - mu) / sigma).^2);
+
+% Compute the log-likelihoods
+log_likelihoods = log(likelihoods);
+
+% Sum all log-likelihoods
+total_log_likelihood = sum(log_likelihoods)
+
+% Take the negative of the total log-likelihood
+negative_log_likelihood = -total_log_likelihood
+
+
+(3) Define intitial conditions
+lowerBounds = [0.001 0.001];
+upperBounds = [1000 1000]
+
+% Assuming RTs_final is your cleaned RTs
+initial_mu = mean(RTs_final);         % Initial guess for mean
+initial_sigma = std(RTs_final);       % Initial guess for standard deviation
+
+% Combine into an initial values vector
+initialValues = [initial_mu, initial_sigma]
+
+
+(4) Run the fits
+%Set optimization options
+opts = optimoptions(@fmincon, ...
+    'Algorithm', 'active-set', ...
+    'MaxIter', 3000, ...
+    'MaxFunEvals', 3000);
+
+%Run the optimization
+lb = [0, 0];  % Lower bounds for mu and sigma
+ub = [Inf, Inf];  % Upper bounds for mu and sigma
+
+[optimizedParams, fval] = fmincon(@(params) negLogLikelihood(params, RTs_final), ...
+                                   initialValues, ...
+                                   [], [], [], [], ...
+                                   lb, ub, [], opts);
+
+%Define the objective function (negative log-likelihood)
+laterErrFcn = @(params) negLogLikelihood(params, RTs_final);
+
+%Define the optimization problem
+problem = createOptimProblem('fmincon', ...
+    'objective', laterErrFcn, ... % Use the objective function
+    'x0', initialValues, ...       % Initial conditions
+    'lb', lowerBounds, ...         % Parameter lower bounds
+    'ub', upperBounds, ...         % Parameter upper bounds
+    'options', opts);              % Options defined above
+
+%Use GlobalSearch to solve the optimization problem
+[optimizedParams, fval] = run(gs, problem)
+
+ [fits(ii,:), nllk] = run(gs, problem)
+
+ (5) Evaluate the fit
+ Look at the negative log likelihood (lower value indicates better fit) and check if optimized parameter values make sense in the context of your data
